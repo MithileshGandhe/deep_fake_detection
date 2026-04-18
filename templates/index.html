@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Deepfake Detector — Upload an image or video to instantly check if it is real or AI-generated." />
+  <title>Deepfake Detector</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- ───── Animated Background Particles ───── -->
+  <div class="bg-particles" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span>
+  </div>
+
+  <!-- ───── Page Wrapper ───── -->
+  <div class="page-wrapper">
+
+    <!-- ── Header ── -->
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="13" stroke="url(#g1)" stroke-width="2"/>
+            <path d="M9 14c0-2.76 2.24-5 5-5s5 2.24 5 5-2.24 5-5 5-5-2.24-5-5z" fill="url(#g2)"/>
+            <circle cx="14" cy="14" r="2" fill="#fff"/>
+            <defs>
+              <linearGradient id="g1" x1="1" y1="1" x2="27" y2="27">
+                <stop offset="0%" stop-color="#a78bfa"/>
+                <stop offset="100%" stop-color="#38bdf8"/>
+              </linearGradient>
+              <linearGradient id="g2" x1="9" y1="9" x2="19" y2="19">
+                <stop offset="0%" stop-color="#a78bfa"/>
+                <stop offset="100%" stop-color="#38bdf8"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="brand-name">DeepFake <strong>Detector</strong></span>
+      </div>
+      <p class="brand-tagline">AI-Powered Media Authenticity Analysis</p>
+    </header>
+
+    <!-- ── Main Card ── -->
+    <main class="card" id="main-card">
+
+      <!-- Step 1: Upload Zone -->
+      <section class="upload-section" id="upload-section" aria-label="File upload area">
+        <h1 class="card-title">Analyze Your Media</h1>
+        <p class="card-subtitle">Upload an image or video — our AI will determine if it's real or AI-generated.</p>
+
+        <!-- Drag & Drop Zone -->
+        <div
+          class="drop-zone"
+          id="drop-zone"
+          role="button"
+          tabindex="0"
+          aria-label="Drag and drop file here or click to browse"
+        >
+          <div class="drop-zone__icon" aria-hidden="true">
+            <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+              <rect width="52" height="52" rx="16" fill="url(#dg)"/>
+              <path d="M18 32l8-10 6 7.5 4-5 6 7.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="20" cy="22" r="2.5" fill="#fff" opacity=".7"/>
+              <path d="M26 14v-4M22 14l4-4 4 4" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <defs>
+                <linearGradient id="dg" x1="0" y1="0" x2="52" y2="52">
+                  <stop offset="0%" stop-color="#7c3aed"/>
+                  <stop offset="100%" stop-color="#0ea5e9"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <p class="drop-zone__primary">Drag &amp; drop your file here</p>
+          <p class="drop-zone__secondary">or <span class="link-text">browse to upload</span></p>
+          <p class="drop-zone__formats">Supported: JPG, PNG, MP4 &nbsp;·&nbsp; Max 100 MB</p>
+
+          <!-- Hidden file input -->
+          <input
+            type="file"
+            id="file-input"
+            accept=".jpg,.jpeg,.png,.mp4"
+            aria-label="Choose file"
+            hidden
+          />
+        </div>
+
+        <!-- Error message -->
+        <p class="error-msg" id="error-msg" role="alert" aria-live="polite" hidden></p>
+
+        <!-- Preview Area (shown after file selection) -->
+        <div class="preview-wrapper" id="preview-wrapper" hidden>
+          <div class="preview-box" id="preview-box">
+            <!-- Image / Video preview injected by JS -->
+          </div>
+          <div class="file-info" id="file-info">
+            <span class="file-name" id="file-name"></span>
+            <button class="btn-clear" id="btn-clear" aria-label="Remove selected file">✕ Remove</button>
+          </div>
+        </div>
+
+        <!-- Analyse Button -->
+        <button class="btn-analyse" id="btn-analyse" aria-label="Analyse file for deepfake">
+          <span class="btn-text">Analyse Now</span>
+          <span class="btn-icon" aria-hidden="true">→</span>
+        </button>
+      </section>
+
+      <!-- Step 2: Loading State -->
+      <section class="loading-section" id="loading-section" hidden aria-label="Analysing">
+        <div class="spinner-ring" aria-hidden="true">
+          <div></div><div></div><div></div><div></div>
+        </div>
+        <h2 class="loading-title">Analysing your media…</h2>
+        <p class="loading-sub">Running deepfake detection algorithms.<br/>This may take a few seconds.</p>
+        <div class="loading-steps" aria-hidden="true">
+          <span class="step active" id="step-1">Preprocessing</span>
+          <span class="step-arrow">›</span>
+          <span class="step" id="step-2">Feature extraction</span>
+          <span class="step-arrow">›</span>
+          <span class="step" id="step-3">Classification</span>
+        </div>
+      </section>
+
+      <!-- Step 3: Result State -->
+      <section class="result-section" id="result-section" hidden aria-label="Detection result">
+        <div class="result-icon" id="result-icon" aria-hidden="true"></div>
+        <h2 class="result-label" id="result-label"></h2>
+        <div class="confidence-wrap">
+          <span class="confidence-text">Confidence: <strong id="confidence-val"></strong></span>
+          <div class="confidence-bar-bg">
+            <div class="confidence-bar-fill" id="confidence-bar"></div>
+          </div>
+        </div>
+        <p class="result-details" id="result-details"></p>
+
+        <!-- Analyse another file -->
+        <button class="btn-again" id="btn-again" aria-label="Analyse another file">
+          ↩ Analyse Another File
+        </button>
+      </section>
+
+    </main>
+
+    <!-- ── Footer ── -->
+    <footer class="site-footer">
+      <p>Built for research &amp; educational purposes · Results are probabilistic, not definitive</p>
+    </footer>
+
+  </div><!-- /page-wrapper -->
+
+  <!-- Main Script -->
+  <script src="/static/script.js"></script>
+</body>
+</html>
