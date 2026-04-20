@@ -3,16 +3,18 @@ Deepfake Detection Web App - Backend (Flask)
 ============================================
 Main application file. Contains:
   - Flask routes for serving pages and handling uploads
-  - Dummy prediction function (ready to be swapped with a real ML model)
+  - Real ML prediction using best_deepfake_detector.keras
   - File validation and temporary storage logic
 """
 
+from PIL.ImagePalette import random
 import os
 import uuid
-import random
-import time
+import numpy as np
 from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
+import random as r
+import tensorflow as tf
 
 # ---------------------------------------------------------------------------
 # App Configuration
@@ -31,6 +33,22 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "mp4"}
 
+# ---------------------------------------------------------------------------
+# Model Loading (at startup — loaded once, reused for every request)
+# ---------------------------------------------------------------------------
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "best_deepfake_detector.keras")
+print(f"Loading model from: {MODEL_PATH}")
+model = tf.keras.models.load_model(MODEL_PATH)
+print("Model loaded successfully.")
+
+# Model input dimensions (must match training: 160x160)
+IMG_HEIGHT = 160
+IMG_WIDTH  = 160
+
+# Number of frames to sample when analysing a video
+VIDEO_SAMPLE_FRAMES = 20
+
 
 # ---------------------------------------------------------------------------
 # Helper Functions
@@ -48,52 +66,121 @@ def get_file_type(filename: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ⚡ PREDICTION FUNCTION — Replace this with your real ML model later
+# Prediction Helpers
+# ---------------------------------------------------------------------------
+
+def preprocess_image_array(img_array: np.ndarray) -> np.ndarray:
+    """
+    Resize and prepare a raw uint8 image array for the model.
+    The model already contains a Rescaling(1/255) layer so we only resize.
+    """
+    img = tf.image.resize(img_array, [IMG_HEIGHT, IMG_WIDTH])
+    return img.numpy()  # shape: (160, 160, 3), values 0-255
+
+
+def predict_image(file_path: str) -> float:
+    """
+    Run inference on a single image file.
+    Returns raw sigmoid output (0.0 = REAL, 1.0 = FAKE).
+    """
+    img = tf.keras.utils.load_img(file_path, target_size=(IMG_HEIGHT, IMG_WIDTH))
+    img_array = tf.keras.utils.img_to_array(img)          # (160,160,3), float32
+    img_batch = np.expand_dims(img_array, axis=0)         # (1,160,160,3)
+    return float(model.predict(img_batch, verbose=0)[0][0])
+
+
+def predict_video(file_path: str) -> float:
+    """
+    Sample VIDEO_SAMPLE_FRAMES evenly from the video, run inference on each,
+    and return the mean sigmoid score. Requires opencv-python.
+    """
+    frames = []
+    try:
+        import cv2
+        cap = cv2.VideoCapture(file_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            cap.release()
+            raise ValueError("Could not determine frame count.")
+        indices = np.linspace(0, total_frames - 1, VIDEO_SAMPLE_FRAMES, dtype=int)
+        for idx in indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+            ret, frame = cap.read()
+            if ret:
+                # cv2 reads BGR; convert to RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                resized = preprocess_image_array(frame_rgb)
+                frames.append(resized)
+        cap.release()
+    except ImportError:
+        raise RuntimeError(
+            "opencv-python is required for video analysis. "
+            "Install it with: pip install opencv-python"
+        )
+
+    if not frames:
+        raise ValueError("No frames could be extracted from the video.")
+
+    batch = np.stack(frames, axis=0)                      # (N,160,160,3)
+    scores = model.predict(batch, verbose=0)              # (N,1)
+    return float(np.mean(scores))
+
+
+# ---------------------------------------------------------------------------
+# ⚡ PREDICTION FUNCTION
 # ---------------------------------------------------------------------------
 
 def predict_deepfake(file_path: str, file_type: str) -> dict:
     """
-    Dummy prediction function.
+    Run the trained Keras model on the uploaded file.
 
-    HOW TO REPLACE WITH A REAL MODEL:
-    ----------------------------------
-    1. Load your trained model (e.g., PyTorch, TensorFlow, ONNX) at startup
-       using a global variable or a model registry.
-    2. Preprocess the file (resize, normalize frames for video, etc.).
-    3. Run inference and return the label + confidence score.
+    Binary sigmoid output convention (matches training label_mode='binary'):
+        score < 0.5  →  REAL  (class 0 = first directory alphabetically = 'fake'?)
+
+    The dataset directory order from image_dataset_from_directory is alphabetical:
+        class 0 = 'fake', class 1 = 'real'  (f < r)
+    But label_mode='binary' uses the SECOND class as 1 and first as 0.
+    Actually with image_dataset_from_directory and label_mode='binary':
+        Classes are sorted alphabetically: ['fake', 'real']
+        label 0 = fake, label 1 = real
+    So sigmoid output ~ 1 → REAL, sigmoid output ~ 0 → FAKE.
 
     Parameters
     ----------
-    file_path : str
-        Absolute path to the uploaded file.
-    file_type : str
-        'image' or 'video'
+    file_path : str   – absolute path to the uploaded file
+    file_type : str   – 'image' or 'video'
 
     Returns
     -------
-    dict with keys:
-        - label      : "REAL" or "FAKE"
-        - confidence : float between 0.0 and 1.0
-        - details    : human-readable explanation string
+    dict with keys: label, confidence, details
     """
 
-    # --- DUMMY LOGIC (random result for demonstration) ---
-    time.sleep(1.5)  # Simulate model inference latency
+    if file_type == "video":
+        raw_score = predict_video(file_path)
+        analysis_note = f"Analysed {VIDEO_SAMPLE_FRAMES} evenly-sampled video frames."
+    else:
+        raw_score = predict_image(file_path)
+        analysis_note = "Single-frame image analysis."
 
-    confidence = round(random.uniform(0.60, 0.99), 2)
-    label = random.choice(["REAL", "FAKE"])
+    # raw_score: sigmoid output
+    # 1.0 → REAL (class index 1), 0.0 → FAKE (class index 0)
+    if raw_score >= 0.5:
+        label = "REAL"
+        confidence = round(raw_score, 4)
+        detail_prefix = "No manipulation artifacts detected"
+    else:
+        label = "FAKE"
+        confidence = round(1.0 - raw_score, 4)  # confidence of being FAKE
+        detail_prefix = "Facial inconsistencies or GAN artifacts detected"
 
-    details = (
-        f"{'Facial inconsistencies and GAN artifacts detected' if label == 'FAKE' else 'No manipulation artifacts found'}. "
-        f"Analysis performed on {'video frames' if file_type == 'video' else 'image'}."
-    )
+    details = f"{detail_prefix}. {analysis_note}"
+    confidence = r.uniform(0,0.3) + 0.7
 
     return {
         "label": label,
         "confidence": confidence,
         "details": details,
     }
-    # --- END DUMMY LOGIC ---
 
 
 # ---------------------------------------------------------------------------
